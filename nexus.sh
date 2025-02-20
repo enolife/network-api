@@ -42,10 +42,7 @@ while [ -z "$NONINTERACTIVE" ] && [ ! -f "$NEXUS_HOME/node-id" ]; do
         [Nn]* ) 
             echo ""
             exit;;
-        [Yy]* ) 
-            echo ""
-            break;;
-        "" ) 
+        [Yy]* | "" ) 
             echo ""
             break;;
         * ) 
@@ -65,20 +62,24 @@ if [ "$GIT_IS_AVAILABLE" != 0 ]; then
 fi
 
 # -----------------------------------------------------------------------------
-# 6) Clone or update the network-api repository in $NEXUS_HOME.
+# 6) Clone or update the network-api repository from the forked repo in $NEXUS_HOME.
 # -----------------------------------------------------------------------------
 REPO_PATH="$NEXUS_HOME/network-api"
+REPO_URL="https://github.com/enolife/network-api"
+
 if [ -d "$REPO_PATH" ]; then
-  echo "$REPO_PATH exists. Updating."
+  echo "$REPO_PATH exists. Checking remote repository."
   (
     cd "$REPO_PATH" || exit
+    git remote set-url origin "$REPO_URL"  # Ensure the repo is tracking the fork
     git stash
+    git pull origin main --rebase  # Pull latest changes from the fork
     git fetch --tags
   )
 else
   (
     cd "$NEXUS_HOME" || exit
-    git clone https://github.com/enolife/network-api
+    git clone "$REPO_URL"
   )
 fi
 
@@ -99,11 +100,11 @@ fi
   cd "$REPO_PATH/clients/cli" || exit
   cargo run -r -- start --env beta
 ) < /dev/tty
+
 # -----------------------------------------------------------------------------
 # For local testing (e.g., staging mode), comment out the above cargo run line
 # and uncomment the line below.
 #
 # echo "Current location: $(pwd)"
-# (cd clients/cli &&   cargo run -r -- start --env beta
-# )
+# (cd clients/cli && cargo run -r -- start --env beta)
 # -----------------------------------------------------------------------------
