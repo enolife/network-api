@@ -55,12 +55,8 @@ async fn authenticated_proving(
 }
 
 fn anonymous_proving() -> Result<(), Box<dyn std::error::Error>> {
-    // 1. Instead of fetching the proof task from the orchestrator, we will use hardcoded input program and values
-
-    // The 10th term of the Fibonacci sequence is 55
     let public_input: u32 = 9;
 
-    //2. Compile the guest program
     println!("1. Compiling guest program...");
     let elf_file_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("assets")
@@ -68,7 +64,6 @@ fn anonymous_proving() -> Result<(), Box<dyn std::error::Error>> {
     let prover =
         Stwo::<Local>::new_from_file(&elf_file_path).expect("failed to load guest program");
 
-    //3. Run the prover
     println!("2. Creating ZK proof...");
     let (view, proof) = prover
         .prove_with_input::<(), u32>(&(), &public_input)
@@ -89,11 +84,9 @@ fn anonymous_proving() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Starts the prover, which can be anonymous or connected to the Nexus Orchestrator
 pub async fn start_prover(
     environment: &config::Environment,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Print the banner at startup
     utils::cli_branding::print_banner();
 
     println!(
@@ -104,7 +97,6 @@ pub async fn start_prover(
             .bright_cyan(),
     );
 
-    // Run the initial setup to determine anonymous or connected node
     match setup::run_initial_setup().await {
         setup::SetupResult::Anonymous => {
             println!(
@@ -114,7 +106,6 @@ pub async fn start_prover(
                     .underline()
                     .bright_cyan()
             );
-            // Run the proof generation loop with anonymous proving
             let mut proof_count = 1;
             loop {
                 println!("\n================================================");
@@ -165,9 +156,9 @@ pub async fn start_prover(
                     format!("\nStarting proof #{} ...\n", proof_count).yellow()
                 );
 
-                match anonymous_proving() {
+                match authenticated_proving(&node_id, environment).await {
                     Ok(_) => (),
-                    Err(e) => println!("Error in anonymous proving: {}", e),
+                    Err(e) => println!("Error in authenticated proving: {}", e),
                 }
                 proof_count += 1;
                 tokio::time::sleep(std::time::Duration::from_secs(4)).await;
