@@ -72,7 +72,7 @@ impl OrchestratorClient {
 
         // Wait for any response
         if let Some(Ok(result)) = rx.recv().await {
-            return result;
+            return Ok(result);
         }
 
         // Cancel all tasks after first success
