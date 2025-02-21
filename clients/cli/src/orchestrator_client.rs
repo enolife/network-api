@@ -6,11 +6,13 @@ use crate::nexus_orchestrator::{
 };
 use prost::Message;
 use reqwest::Client;
+use std::fs::File;
+use std::io::{Write, Error};
+use serde_json;
 
 pub struct OrchestratorClient {
     client: Client,
     base_url: String,
-    // environment: config::Environment,
 }
 
 impl OrchestratorClient {
@@ -18,7 +20,6 @@ impl OrchestratorClient {
         Self {
             client: Client::new(),
             base_url: environment.orchestrator_url(),
-            // environment,
         }
     }
 
@@ -61,7 +62,6 @@ impl OrchestratorClient {
             let status = friendly_messages.status();
             let error_text = friendly_messages.text().await?;
 
-            // Clean up error text by removing HTML
             let clean_error = if error_text.contains("<html>") {
                 format!("HTTP {}", status.as_u16())
             } else {
@@ -92,7 +92,6 @@ impl OrchestratorClient {
         match U::decode(response_bytes) {
             Ok(msg) => Ok(Some(msg)),
             Err(_e) => {
-                // println!("Failed to decode response: {:?}", e);
                 Ok(None)
             }
         }
@@ -128,7 +127,7 @@ impl OrchestratorClient {
             node_id: node_id.to_string(),
             node_type: NodeType::CliProver as i32,
             proof_hash: proof_hash.to_string(),
-            proof,
+            proof: proof.clone(),
             node_telemetry: Some(crate::nexus_orchestrator::NodeTelemetry {
                 flops_per_sec: Some(flops as i32),
                 memory_used: Some(program_memory),
@@ -137,12 +136,34 @@ impl OrchestratorClient {
             }),
         };
 
+        // Save JSON
+        if let Ok(json) = serde_json::to_string_pretty(&request) {
+            let _ = save_to_file("submit_proof.json", &json);
+        }
+
+        // Save Binary
         let binary_payload = request.encode_to_vec();
-        println!("[DEBUG] Raw Payload: {:?}", binary_payload);
+        let _ = save_binary_to_file("submit_proof.bin", &binary_payload);
+
         self.make_request::<SubmitProofRequest, ()>("/tasks/submit", "POST", &request)
             .await?;
 
-        println!("\tNexus Orchestrator: Proof submitted successfully");
         Ok(())
     }
+}
+
+// Save JSON Payload
+fn save_to_file(filename: &str, data: &str) -> Result<(), Error> {
+    let mut file = File::create(filename)?;
+    file.write_all(data.as_bytes())?;
+    println!("[DEBUG] Saved JSON to {}", filename);
+    Ok(())
+}
+
+// Save Binary Payload
+fn save_binary_to_file(filename: &str, data: &[u8]) -> Result<(), Error> {
+    let mut file = File::create(filename)?;
+    file.write_all(data)?;
+    println!("[DEBUG] Saved binary to {}", filename);
+    Ok(())
 }
