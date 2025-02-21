@@ -137,6 +137,8 @@ impl OrchestratorClient {
             }),
         };
 
+        let binary_payload = request.encode_to_vec();
+        println!("[DEBUG] Raw Payload: {:?}", binary_payload);
         self.make_request::<SubmitProofRequest, ()>("/tasks/submit", "POST", &request)
             .await?;
 
