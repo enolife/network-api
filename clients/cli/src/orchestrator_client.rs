@@ -59,46 +59,45 @@ impl OrchestratorClient {
     }
 
     async fn make_concurrent_requests<T, U>(
-        &self,
-        url: &str,
-        method: &str,
-        request_data: &T,
-        attempts: usize,
-    ) -> Result<U, Box<dyn std::error::Error>>
-    where
-        T: Message + Send + Sync + Clone + 'static,
-        U: Message + Default + Send + 'static,
-    {
-        let (tx, mut rx) = mpsc::channel::<Result<U, Box<dyn std::error::Error>>>(1);
+    &self,
+    url: &str,
+    method: &str,
+    request_data: &T,
+    attempts: usize,
+) -> Result<U, Box<dyn std::error::Error>>
+where
+    T: Message + Send + Sync + Clone + 'static,
+    U: Message + Default + Send + 'static,
+{
+    let (tx, mut rx) = mpsc::channel::<Result<U, Box<dyn std::error::Error>>>(1);
 
-        let tasks: Vec<_> = (0..attempts)
-            .map(|_| {
-                let tx = tx.clone();
-                let request_data = request_data.clone();
-                let client = self.client.clone();
-                let url = format!("{}{}", self.base_url, url);
-                let method = method.to_string();
+    let tasks: Vec<_> = (0..attempts)
+        .map(|_| {
+            let tx = tx.clone();
+            let request_data = request_data.clone();
+            let client = self.client.clone();
+            let url = format!("{}{}", self.base_url, url);
+            let method = method.to_string();
 
-                tokio::spawn(async move {
-                    let result: Result<U, Box<dyn std::error::Error>> =
-                        OrchestratorClient { client, base_url: url.clone() }
-                            .make_request(&url, &method, &request_data)
-                            .await;
+            tokio::spawn(async move {
+                let result: Result<U, Box<dyn std::error::Error>> =
+                    OrchestratorClient { client, base_url: url.clone() }
+                        .make_request(&url, &method, &request_data)
+                        .await;
 
-                    let _ = tx.send(result).await;
-                })
+                let _ = tx.send(result).await;
             })
-            .collect();
+        })
+        .collect();
 
-        if let Some(Ok(result)) = rx.recv().await {
-            return Ok(result);  // ✅ Fix applied here
-        }
-
-        // Cancel all tasks after first success
-        drop(tasks);
-
-        Err("[ERROR] All attempts failed.".into())
+    if let Some(Ok(result)) = rx.recv().await {
+        return Ok(result);
     }
+
+    drop(tasks);
+
+    Err("[ERROR] All attempts failed.".into())
+}
 
     pub async fn get_proof_task(
         &self,
