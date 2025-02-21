@@ -9,7 +9,7 @@ use reqwest::Client;
 use serde::Serialize;
 use std::fs::File;
 use std::io::{self, Write};
-use base64;
+use base64; // ✅ Ensure this crate is added in Cargo.toml
 
 /// Struct for serializing `SubmitProofRequest` to JSON
 #[derive(Serialize)]
@@ -128,8 +128,8 @@ impl OrchestratorClient {
             proof: proof.clone(),
             node_telemetry: Some(NodeTelemetry {
                 flops_per_sec: Some(flops as i32),
-                memory_used: Some(program_memory),
-                memory_capacity: Some(total_memory),
+                memory_used: Some(program_memory as i32), // ✅ Ensure compatibility
+                memory_capacity: Some(total_memory as i32), // ✅ Ensure compatibility
                 location: Some("US".to_string()),
             }),
         };
@@ -156,11 +156,11 @@ fn convert_to_json(request: &SubmitProofRequest) -> SubmitProofRequestJson {
         node_id: request.node_id.clone(),
         node_type: request.node_type,
         proof_hash: request.proof_hash.clone(),
-        proof: base64::encode(&request.proof), // Encode binary data as Base64
+        proof: base64::encode(&request.proof), // ✅ Encode binary data as Base64
         node_telemetry: request.node_telemetry.as_ref().map(|t| NodeTelemetryJson {
             flops_per_sec: t.flops_per_sec,
-            memory_used: t.memory_used,
-            memory_capacity: t.memory_capacity,
+            memory_used: t.memory_used.map(|v| v as i64), // ✅ Convert i32 -> i64
+            memory_capacity: t.memory_capacity.map(|v| v as i64), // ✅ Convert i32 -> i64
             location: t.location.clone(),
         }),
     }
