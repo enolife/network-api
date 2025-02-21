@@ -63,6 +63,7 @@ serde ={ version = "1.0.217", features = ["derive"]}
 serde_json = { version = "1.0.138"}
 regex = "1.5"
 sysinfo = "0.33.1"
+base64 = "0.21"
 
 nexus-core = { git = "https://github.com/nexus-xyz/nexus-zkvm", branch = "neo", package = "nexus-core" }
 nexus-vm = { git = "https://github.com/nexus-xyz/nexus-zkvm", branch = "neo", package = "nexus-vm" }
