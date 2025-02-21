@@ -6,11 +6,11 @@ use crate::nexus_orchestrator::{
 };
 use prost::Message;
 use reqwest::Client;
-use tokio::sync::mpsc;
 
 pub struct OrchestratorClient {
     client: Client,
     base_url: String,
+    // environment: config::Environment,
 }
 
 impl OrchestratorClient {
@@ -18,6 +18,7 @@ impl OrchestratorClient {
         Self {
             client: Client::new(),
             base_url: environment.orchestrator_url(),
+            // environment,
         }
     }
 
@@ -26,78 +27,76 @@ impl OrchestratorClient {
         url: &str,
         method: &str,
         request_data: &T,
-    ) -> Result<U, Box<dyn std::error::Error>>
+    ) -> Result<Option<U>, Box<dyn std::error::Error>>
     where
-        T: Message + Send + Sync + 'static,
-        U: Message + Default + Send + 'static,
+        T: Message,
+        U: Message + Default,
     {
         let request_bytes = request_data.encode_to_vec();
         let url = format!("{}{}", self.base_url, url);
 
-        let response = match method {
-            "POST" => self
+        let friendly_connection_error =
+            "[CONNECTION] Unable to reach server. The service might be temporarily unavailable."
+                .to_string();
+        let friendly_messages = match method {
+            "POST" => match self
                 .client
                 .post(&url)
                 .header("Content-Type", "application/octet-stream")
                 .body(request_bytes)
                 .send()
-                .await,
-            "GET" => self.client.get(&url).send().await,
+                .await
+            {
+                Ok(resp) => resp,
+                Err(_) => return Err(friendly_connection_error.into()),
+            },
+            "GET" => match self.client.get(&url).send().await {
+                Ok(resp) => resp,
+                Err(_) => return Err(friendly_connection_error.into()),
+            },
             _ => return Err("[METHOD] Unsupported HTTP method".into()),
         };
 
-        if let Ok(resp) = response {
-            if resp.status().is_success() {
-                let response_bytes = resp.bytes().await.unwrap_or_default();
-                if let Ok(msg) = U::decode(response_bytes) {
-                    return Ok(msg);
-                }
-            }
+        if !friendly_messages.status().is_success() {
+            let status = friendly_messages.status();
+            let error_text = friendly_messages.text().await?;
+
+            // Clean up error text by removing HTML
+            let clean_error = if error_text.contains("<html>") {
+                format!("HTTP {}", status.as_u16())
+            } else {
+                error_text
+            };
+
+            let friendly_message = match status.as_u16() {
+                400 => "[400] Invalid request".to_string(),
+                401 => "[401] Authentication failed. Please check your credentials.".to_string(),
+                403 => "[403] You don't have permission to perform this action.".to_string(),
+                404 => "[404] The requested resource was not found.".to_string(),
+                408 => "[408] The server timed out waiting for your request. Please try again.".to_string(),
+                429 => "[429] Too many requests. Please try again later.".to_string(),
+                502 => "[502] Unable to reach the server. Please try again later.".to_string(),
+                504 => "[504] Gateway Timeout: The server took too long to respond. Please try again later.".to_string(),
+                500..=599 => format!("[{}] A server error occurred. Our team has been notified. Please try again later.", status),
+                _ => format!("[{}] Unexpected error: {}", status, clean_error),
+            };
+
+            return Err(friendly_message.into());
         }
 
-        Err("[ERROR] Request failed.".into())
+        let response_bytes = friendly_messages.bytes().await?;
+        if response_bytes.is_empty() {
+            return Ok(None);
+        }
+
+        match U::decode(response_bytes) {
+            Ok(msg) => Ok(Some(msg)),
+            Err(_e) => {
+                // println!("Failed to decode response: {:?}", e);
+                Ok(None)
+            }
+        }
     }
-
-    async fn make_concurrent_requests<T, U>(
-    &self,
-    url: &str,
-    method: &str,
-    request_data: &T,
-    attempts: usize,
-) -> Result<U, Box<dyn std::error::Error>>
-where
-    T: Message + Send + Sync + Clone + 'static,
-    U: Message + Default + Send + 'static,
-{
-    let (tx, mut rx) = mpsc::channel::<Result<U, Box<dyn std::error::Error>>>(1);
-
-    let tasks: Vec<_> = (0..attempts)
-        .map(|_| {
-            let tx = tx.clone();
-            let request_data = request_data.clone();
-            let client = self.client.clone();
-            let url = format!("{}{}", self.base_url, url);
-            let method = method.to_string();
-
-            tokio::spawn(async move {
-                let result: Result<U, Box<dyn std::error::Error>> =
-                    OrchestratorClient { client, base_url: url.clone() }
-                        .make_request(&url, &method, &request_data)
-                        .await;
-
-                let _ = tx.send(result).await;
-            })
-        })
-        .collect();
-
-    if let Some(Ok(result)) = rx.recv().await {
-        return Ok(result);
-    }
-
-    drop(tasks);
-
-    Err("[ERROR] All attempts failed.".into())
-}
 
     pub async fn get_proof_task(
         &self,
@@ -108,8 +107,12 @@ where
             node_type: NodeType::CliProver as i32,
         };
 
-        self.make_concurrent_requests("/tasks", "POST", &request, 20)
-            .await
+        let response = self
+            .make_request("/tasks", "POST", &request)
+            .await?
+            .ok_or("No response received from get_proof_task")?;
+
+        Ok(response)
     }
 
     pub async fn submit_proof(
@@ -134,7 +137,7 @@ where
             }),
         };
 
-        self.make_concurrent_requests("/tasks/submit", "POST", &request, 20)
+        self.make_request::<SubmitProofRequest, ()>("/tasks/submit", "POST", &request)
             .await?;
 
         Ok(())
